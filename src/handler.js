@@ -6,6 +6,7 @@ const {userInfo} = require('os');
 const pool = require('./db');
 const { DateTime } = require('luxon');
 
+
 async function postRegister(request, h) {
     const { name, email, password } = request.payload;
 
@@ -20,7 +21,7 @@ async function postRegister(request, h) {
         if (rows.length > 0) {
             // Jika email sudah terdaftar, kirim respons dengan pesan error
             const response = h.response({
-                status: 'fail',
+                status: 'error',
                 message: 'Email sudah terdaftar',
             });
             response.code(400);
@@ -91,14 +92,13 @@ async function loginUser(request, h){
     }).code(200);
 };
 
-async function postPredict(request, h){
-    
+async function postPredict(request, h) {
     const authorizationHeader = request.headers.authorization;
 
     if (!authorizationHeader || !authorizationHeader.startsWith('Bearer ')) {
         return h.response({
-          status: 'error',
-          message: 'Missing or invalid authorization header'
+            status: 'error',
+            message: 'Header autorisasi tidak valid atau tidak ditemukan'
         }).code(401);
     }
 
@@ -106,32 +106,27 @@ async function postPredict(request, h){
 
     const JWT_SECRET = process.env.JWT_SECRET;
 
-    const decodedToken = jwt.verify(token, JWT_SECRET)
+    const decodedToken = jwt.verify(token, JWT_SECRET);
     const user_id = decodedToken.user_id;
 
     const id = crypto.randomUUID();
-    const date = DateTime.now().setZone('Asia/Jakarta').toISODate();
-    
 
-    const {food_name, carbohydrate, proteins, fat, calories} = request.payload
-
-    const data = {
-        "id": id,
-        "user_id": user_id,
-        "food_name": food_name,
-        "carbohydrate": carbohydrate,
-        "proteins": proteins,
-        "fat": fat,
-        "calories": calories,
-        "created_at": date,
-    }
+    const { food_name, carbohydrate, proteins, fat, calories } = request.payload;
 
     const connection = await pool.getConnection();
     try {
         await connection.execute(
-            'INSERT INTO predictions (id, user_id, food_name, carbohydrate, proteins, fat, calories, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-            [data.id, data.user_id, data.food_name, data.carbohydrate, data.proteins, data.fat, data.calories, data.created_at]
+            'INSERT INTO predictions (id, user_id, food_name, carbohydrate, proteins, fat, calories) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            [id, user_id, food_name, carbohydrate, proteins, fat, calories]
         );
+
+        // Ambil seluruh kolom dari tabel predictions yang sesuai dengan id yang baru saja dimasukkan
+        const [result] = await connection.execute(
+            'SELECT * FROM predictions WHERE id = ?',
+            [id]
+        );
+
+        const data = result[0]; // Gunakan hasil query untuk mendapatkan data lengkap
 
         const response = h.response({
             status: 'success',
@@ -144,7 +139,7 @@ async function postPredict(request, h){
         console.error('Error during postPredict:', err);
         const response = h.response({
             status: 'error',
-            message: 'Internal Server Error'
+            message: 'Server Internal Error'
         });
         response.code(500);
         return response;
@@ -153,15 +148,16 @@ async function postPredict(request, h){
     }
 };
 
-async function fetchNutrients(request, h){
-    const {date} = request.query
+
+async function fetchNutrients(request, h) {
+    const { date } = request.query;
 
     const authorizationHeader = request.headers.authorization;
 
     if (!authorizationHeader || !authorizationHeader.startsWith('Bearer ')) {
         return h.response({
-          status: 'error',
-          message: 'Missing or invalid authorization header'
+            status: 'error',
+            message: 'Header autorisasi tidak valid atau tidak ditemukan'
         }).code(401);
     }
 
@@ -170,14 +166,14 @@ async function fetchNutrients(request, h){
     const JWT_SECRET = process.env.JWT_SECRET;
 
     const decodedToken = jwt.verify(token, JWT_SECRET);
-    const userid = decodedToken.user_id;
+    const user_id = decodedToken.user_id;
 
     const connection = await pool.getConnection();
     let rows;
     try {
         const [results] = await connection.execute(
-            'SELECT * FROM predictions WHERE created_at = ?',
-            [date]
+            'SELECT * FROM predictions WHERE DATE(created_at) = ? AND user_id = ?',
+            [date, user_id]
         );
         rows = results;
     } finally {
@@ -188,7 +184,7 @@ async function fetchNutrients(request, h){
         return h.response({
             status: 'error',
             message: 'Data tidak ditemukan'
-        }).code(400);
+        }).code(404); // Ganti kode respons menjadi 404 jika data tidak ditemukan
     }
 
     const data = rows.map(row => ({
@@ -202,5 +198,6 @@ async function fetchNutrients(request, h){
         data
     }).code(200);
 }
+
 
 module.exports = {postPredict, postRegister, loginUser, fetchNutrients};
