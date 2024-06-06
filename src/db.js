@@ -1,10 +1,11 @@
+// db.js
 const mysql = require('mysql2/promise');
 
 const pool = mysql.createPool({
-    host: 'YOUR_CLOUD_SQL_HOST',
-    user: 'YOUR_DB_USER',
-    password: 'YOUR_DB_PASSWORD',
-    database: 'YOUR_DATABASE_NAME'
+    host: '34.34.221.182',
+    user: 'root',
+    password: 'capstonenutrilog',
+    database: 'Nutrilog-db'
 });
 
 module.exports = pool;
