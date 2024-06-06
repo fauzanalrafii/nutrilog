@@ -4,33 +4,47 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const {userInfo} = require('os');
 const pool = require('./db');
+const { DateTime } = require('luxon');
 
-
-async function postRegister(request, h){
-    
-    const {name, email, password} = request.payload
-
-    const user_id = crypto.randomUUID();
-    const token = crypto.randomUUID();
-
-    const hashedPassword = await bcrypt .hash(password, 10);
+async function postRegister(request, h) {
+    const { name, email, password } = request.payload;
 
     const connection = await pool.getConnection();
-    try{
-        await connection.execute(
-            'INSERT INTO users (user_id, name, email, password, token) VALUES (?, ?, ?, ?, ?)',
-            [user_id, name, email, hashedPassword, token]
+    try {
+        // Cek apakah email sudah terdaftar
+        const [rows] = await connection.execute(
+            'SELECT id FROM users WHERE email = ?',
+            [email]
         );
-    }finally{
+
+        if (rows.length > 0) {
+            // Jika email sudah terdaftar, kirim respons dengan pesan error
+            const response = h.response({
+                status: 'fail',
+                message: 'Email sudah terdaftar',
+            });
+            response.code(400);
+            return response;
+        }
+
+        // Jika email belum terdaftar, lanjutkan dengan pendaftaran
+        const id = crypto.randomUUID();
+        const hashedPassword = await bcrypt.hash(password, 10);
+
+        await connection.execute(
+            'INSERT INTO users (id, name, email, password) VALUES (?, ?, ?, ?)',
+            [id, name, email, hashedPassword]
+        );
+
+        const response = h.response({
+            status: 'success',
+            message: 'Register user berhasil, data berhasil ditambahkan',
+        });
+        response.code(201);
+        return response;
+    } finally {
         connection.release();
     }
-
-    const response = h.response({
-        status: 'success',
-        message: 'Register user berhasil, data berhasil ditambahkan',
-    })
-    response.code(201);
-    return response;
 };
 
 async function loginUser(request, h){
@@ -41,7 +55,7 @@ async function loginUser(request, h){
     let user;
     try{
         const [rows] = await connection.execute(
-            'SELECT user_id, name, email, password FROM users WHERE email = ?',
+            'SELECT id, name, email, password FROM users WHERE email = ?',
             [email]
         );
 
@@ -66,15 +80,14 @@ async function loginUser(request, h){
         }).code(400);
     }
 
-    const token = jwt.sign({user_id: user.user_id}, process.env.JWT_SECRET);
+    const token = jwt.sign({user_id: user.id}, process.env.JWT_SECRET);
 
     delete user.password;
-    delete user.user_id;
 
     return h.response ({
         status: 'success',
         message: 'berhasil login',
-        data: user, token
+        data: {...user, token}
     }).code(200);
 };
 
@@ -97,8 +110,7 @@ async function postPredict(request, h){
     const user_id = decodedToken.user_id;
 
     const id = crypto.randomUUID();
-    const date = new Date().toISOString().slice(0, 19).replace('T', ' ');;
-    const dateCreated = date.slice(0,10);
+    const date = DateTime.now().setZone('Asia/Jakarta').toISODate();
     
 
     const {food_name, carbohydrate, proteins, fat, calories} = request.payload
@@ -112,17 +124,14 @@ async function postPredict(request, h){
         "fat": fat,
         "calories": calories,
         "created_at": date,
-        "dateCreated": dateCreated
     }
 
     const connection = await pool.getConnection();
     try {
         await connection.execute(
-            'INSERT INTO predictions (id, user_id, food_name, carbohydrate, proteins, fat, calories, created_at, dateCreated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [data.id, data.user_id, data.food_name, data.carbohydrate, data.proteins, data.fat, data.calories, data.created_at, data.dateCreated]
+            'INSERT INTO predictions (id, user_id, food_name, carbohydrate, proteins, fat, calories, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            [data.id, data.user_id, data.food_name, data.carbohydrate, data.proteins, data.fat, data.calories, data.created_at]
         );
-
-        delete(data.dateCreated);
 
         const response = h.response({
             status: 'success',
@@ -167,7 +176,7 @@ async function fetchNutrients(request, h){
     let rows;
     try {
         const [results] = await connection.execute(
-            'SELECT * FROM predictions WHERE dateCreated = ?',
+            'SELECT * FROM predictions WHERE created_at = ?',
             [date]
         );
         rows = results;
