@@ -1,10 +1,7 @@
-// const storeData = require('../services/storeData');
-// const registerUser = require('../services/registerUser');
 require('dotenv').config();
 const crypto = require('crypto');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-// const { Firestore } = require('@google-cloud/firestore');
 const {userInfo} = require('os');
 const pool = require('./db');
 
@@ -28,17 +25,6 @@ async function postRegister(request, h){
         connection.release();
     }
 
-
-    // const data_user = {
-    //     "user_id": user_id,
-    //     "name": name,
-    //     "email": email,
-    //     "password": hashedPassword,
-    //     "token": token
-    // }
-
-    // await registerUser(name, data_user)
-
     const response = h.response({
         status: 'success',
         message: 'Register user berhasil, data berhasil ditambahkan',
@@ -48,27 +34,8 @@ async function postRegister(request, h){
 };
 
 async function loginUser(request, h){
-    //const token = crypto.randomUUID();
-
-    // const db = new Firestore();
 
     const {email, password} = request.payload;
-
-    // let collectionRef = db.collection('user');
-
-    // const snapshot = await collectionRef.get();
-
-    // if(snapshot.empty){
-    //     return h.response({
-    //         status: 'error',
-    //         message: 'Email atau password salah'
-    //     }).code(400);
-    // }
-
-    // let user;
-    // snapshot.forEach(doc => {
-    //     user = { user_id: doc.id, ...doc.data() };
-    // });
 
     const connection = await pool.getConnection();
     let user;
@@ -138,7 +105,7 @@ async function postPredict(request, h){
 
     const data = {
         "id": id,
-        "user_id": user_id, // Ensure this user_id is set correctly or dynamically if needed
+        "user_id": user_id,
         "food_name": food_name,
         "carbohydrate": carbohydrate,
         "proteins": proteins,
@@ -147,8 +114,6 @@ async function postPredict(request, h){
         "created_at": date,
         "dateCreated": dateCreated
     }
-
-    // await storeData(id, data)
 
     const connection = await pool.getConnection();
     try {
@@ -197,29 +162,6 @@ async function fetchNutrients(request, h){
 
     const decodedToken = jwt.verify(token, JWT_SECRET);
     const userid = decodedToken.user_id;
-
-    // const db = new Firestore();
-
-    // let collectionRef = db.collection('prediction');
-
-    // if(date) {
-    //     collectionRef = collectionRef.where('dateCreated', 'in', [date])
-    // }
-
-    // const snapshot = await collectionRef.get();
-
-    // if (snapshot.empty){
-    //     return h.response({
-    //         status: 'error',
-    //         message: 'Data tidak ditemukan'
-    //     }).code(400);
-    // }
-
-    // const data = [];
-
-    // snapshot.forEach(doc => {
-    //     data.push({id: doc.id, ...doc.data()});
-    // });
 
     const connection = await pool.getConnection();
     let rows;
