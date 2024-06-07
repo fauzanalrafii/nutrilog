@@ -4,11 +4,10 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const {userInfo} = require('os');
 const pool = require('./db');
-const { DateTime } = require('luxon');
 
 
 async function postRegister(request, h) {
-    const { name, email, password } = request.payload;
+    const { name, email, password, gender, age} = request.payload;
 
     const connection = await pool.getConnection();
     try {
@@ -32,9 +31,16 @@ async function postRegister(request, h) {
         const id = crypto.randomUUID();
         const hashedPassword = await bcrypt.hash(password, 10);
 
+        if (gender !== "male" || "female"){
+            return h.response({
+                "status": 'error',
+                "message": 'gender bukan male maupun female'
+            }).code(400);
+        }
+
         await connection.execute(
-            'INSERT INTO users (id, name, email, password) VALUES (?, ?, ?, ?)',
-            [id, name, email, hashedPassword]
+            'INSERT INTO users (id, name, email, password, gender, age) VALUES (?, ?, ?, ?, ?, ?)',
+            [id, name, email, hashedPassword, gender, age]
         );
 
         const response = h.response({
@@ -56,7 +62,7 @@ async function loginUser(request, h){
     let user;
     try{
         const [rows] = await connection.execute(
-            'SELECT id, name, email, password FROM users WHERE email = ?',
+            'SELECT id, name, email, password, gender, age FROM users WHERE email = ?',
             [email]
         );
 
