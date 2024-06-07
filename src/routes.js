@@ -18,12 +18,12 @@ const routes = [
     },
     {
         method: 'POST',
-        path: '/analiyze',
+        path: '/analyze',
         handler: postPredict,
     },
     {
         method: 'GET',
-        path: '/fetch',
+        path: '/nutrients',
         handler: fetchNutrients,
     },
     {

@@ -30,7 +30,7 @@ async function postRegister(request, h) {
         // Jika email belum terdaftar, lanjutkan dengan pendaftaran
         const id = crypto.randomUUID();
         const hashedPassword = await bcrypt.hash(password, 10);
-        
+
         await connection.execute(
             'INSERT INTO users (id, name, email, password, gender, age) VALUES (?, ?, ?, ?, ?, ?)',
             [id, name, email, hashedPassword, gender, age]
@@ -40,7 +40,7 @@ async function postRegister(request, h) {
             status: 'success',
             message: 'Register user berhasil, data berhasil ditambahkan',
         });
-        response.code(201);
+        response.code(200);
         return response;
     } finally {
         connection.release();
@@ -105,15 +105,23 @@ async function postPredict(request, h) {
 
     const JWT_SECRET = process.env.JWT_SECRET;
 
-    const decodedToken = jwt.verify(token, JWT_SECRET);
+    let decodedToken;
+    try {
+        decodedToken = jwt.verify(token, JWT_SECRET);
+    } catch (err) {
+        return h.response({
+            status: 'error',
+            message: 'Token tidak valid'
+        }).code(401);
+    }
+    
     const user_id = decodedToken.user_id;
-
     const id = crypto.randomUUID();
-
     const { food_name, carbohydrate, proteins, fat, calories } = request.payload;
 
     const connection = await pool.getConnection();
     try {
+        // Insert data ke tabel predictions
         await connection.execute(
             'INSERT INTO predictions (id, user_id, food_name, carbohydrate, proteins, fat, calories) VALUES (?, ?, ?, ?, ?, ?, ?)',
             [id, user_id, food_name, carbohydrate, proteins, fat, calories]
@@ -121,18 +129,21 @@ async function postPredict(request, h) {
 
         // Ambil seluruh kolom dari tabel predictions yang sesuai dengan id yang baru saja dimasukkan
         const [result] = await connection.execute(
-            'SELECT * FROM predictions WHERE id = ?',
+            'SELECT id, user_id, food_name, carbohydrate, proteins, fat, calories, created_at FROM predictions WHERE id = ?',
             [id]
         );
 
-        const data = result[0]; // Gunakan hasil query untuk mendapatkan data lengkap
+        let data = result[0]; // Gunakan hasil query untuk mendapatkan data lengkap
+
+        // Hapus kolom updated_at dari hasil output
+        delete data.updated_at;
 
         const response = h.response({
             status: 'success',
             message: 'Data berhasil ditambahkan',
             data
         });
-        response.code(201);
+        response.code(200);
         return response;
     } catch (err) {
         console.error('Error during postPredict:', err);
@@ -145,7 +156,8 @@ async function postPredict(request, h) {
     } finally {
         connection.release();
     }
-};
+}
+
 
 
 async function fetchNutrients(request, h) {
