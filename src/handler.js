@@ -30,14 +30,7 @@ async function postRegister(request, h) {
         // Jika email belum terdaftar, lanjutkan dengan pendaftaran
         const id = crypto.randomUUID();
         const hashedPassword = await bcrypt.hash(password, 10);
-
-        if (gender !== "male" || "female"){
-            return h.response({
-                "status": 'error',
-                "message": 'gender bukan male maupun female'
-            }).code(400);
-        }
-
+        
         await connection.execute(
             'INSERT INTO users (id, name, email, password, gender, age) VALUES (?, ?, ?, ?, ?, ?)',
             [id, name, email, hashedPassword, gender, age]
