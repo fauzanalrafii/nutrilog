@@ -172,7 +172,7 @@ async function fetchNutrients(request, h) {
     let rows;
     try {
         const [results] = await connection.execute(
-            'SELECT * FROM predictions WHERE DATE(created_at) = ? AND user_id = ?',
+            'SELECT id, user_id, food_name, carbohydrate, proteins, fat, calories, created_at FROM predictions WHERE DATE(created_at) = ? AND user_id = ?',
             [date, user_id]
         );
         rows = results;
