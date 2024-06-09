@@ -2,12 +2,31 @@ require('dotenv').config();
 const crypto = require('crypto');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-const {userInfo} = require('os');
 const pool = require('./db');
 
 
 async function postRegister(request, h) {
-    const { name, email, password, gender, age} = request.payload;
+    const { name, email, password, gender, age } = request.payload;
+
+    // Validasi apakah semua field diperlukan terisi
+    if (!name || !email || !password || !gender || !age) {
+        const response = h.response({
+            status: 'error',
+            message: 'Name, email, password, gender, and age are required'
+        });
+        response.code(400);
+        return response;
+    }
+
+    // Validasi panjang password
+    if (password.length < 8) {
+        const response = h.response({
+            status: 'error',
+            message: 'Password must be at least 8 characters'
+        });
+        response.code(400);
+        return response;
+    }
 
     const connection = await pool.getConnection();
     try {
@@ -21,7 +40,7 @@ async function postRegister(request, h) {
             // Jika email sudah terdaftar, kirim respons dengan pesan error
             const response = h.response({
                 status: 'error',
-                message: 'Email sudah terdaftar',
+                message: 'Email already registered'
             });
             response.code(400);
             return response;
@@ -38,18 +57,35 @@ async function postRegister(request, h) {
 
         const response = h.response({
             status: 'success',
-            message: 'Register user berhasil, data berhasil ditambahkan',
+            message: 'User registered successfully'
         });
         response.code(200);
+        return response;
+    } catch (error) {
+        console.error('Error during user registration:', error);
+        const response = h.response({
+            status: 'error',
+            message: 'Internal Server Error'
+        });
+        response.code(500);
         return response;
     } finally {
         connection.release();
     }
-};
+}
 
 async function loginUser(request, h){
 
     const {email, password} = request.payload;
+
+    if (!email || !password) {
+        const response = h.response({
+            status: 'error',
+            message: 'email and password are required'
+        });
+        response.code(400);
+        return response;
+    }
 
     const connection = await pool.getConnection();
     let user;
@@ -62,7 +98,7 @@ async function loginUser(request, h){
         if (rows.length === 0){
             return h.response({
                 status: 'error',
-                message: 'Email atau password salah'
+                message: 'wrong email or password'
             }).code(400);
         }
 
@@ -76,7 +112,7 @@ async function loginUser(request, h){
     if (!passwordMatch) {
         return h.response({
             status: 'error',
-            message: 'Email atau password salah'
+            message: 'Wrong email or password'
         }).code(400);
     }
 
@@ -86,7 +122,7 @@ async function loginUser(request, h){
 
     return h.response ({
         status: 'success',
-        message: 'berhasil login',
+        message: 'Login success',
         data: {...user, token}
     }).code(200);
 };
@@ -97,7 +133,7 @@ async function postPredict(request, h) {
     if (!authorizationHeader || !authorizationHeader.startsWith('Bearer ')) {
         return h.response({
             status: 'error',
-            message: 'Header autorisasi tidak valid atau tidak ditemukan'
+            message: 'Authorizarion missing'
         }).code(401);
     }
 
@@ -111,13 +147,22 @@ async function postPredict(request, h) {
     } catch (err) {
         return h.response({
             status: 'error',
-            message: 'Token tidak valid'
+            message: 'Invalid token'
         }).code(401);
     }
     
     const user_id = decodedToken.user_id;
     const id = crypto.randomUUID();
     const { food_name, carbohydrate, proteins, fat, calories } = request.payload;
+
+    if (!food_name || !carbohydrate || !proteins || !fat || !calories) {
+        const response = h.response({
+            status: 'error',
+            message: 'food_name, carbohydrate, proteins, fat, and calories are required'
+        });
+        response.code(400);
+        return response;
+    }
 
     const connection = await pool.getConnection();
     try {
@@ -140,7 +185,7 @@ async function postPredict(request, h) {
 
         const response = h.response({
             status: 'success',
-            message: 'Data berhasil ditambahkan',
+            message: 'Data added successfully',
             data
         });
         response.code(200);
@@ -168,7 +213,7 @@ async function fetchNutrients(request, h) {
     if (!authorizationHeader || !authorizationHeader.startsWith('Bearer ')) {
         return h.response({
             status: 'error',
-            message: 'Header autorisasi tidak valid atau tidak ditemukan'
+            message: 'Authorizarion missing'
         }).code(401);
     }
 
@@ -176,7 +221,16 @@ async function fetchNutrients(request, h) {
 
     const JWT_SECRET = process.env.JWT_SECRET;
 
-    const decodedToken = jwt.verify(token, JWT_SECRET);
+    let decodedToken;
+    try {
+        decodedToken = jwt.verify(token, JWT_SECRET);
+    } catch (err) {
+        return h.response({
+            status: 'error',
+            message: 'Invalid token'
+        }).code(401);
+    }
+
     const user_id = decodedToken.user_id;
 
     const connection = await pool.getConnection();
@@ -191,21 +245,25 @@ async function fetchNutrients(request, h) {
         connection.release();
     }
 
-    if (rows.length === 0) {
-        return h.response({
-            status: 'error',
-            message: 'Data tidak ditemukan'
-        }).code(404); // Ganti kode respons menjadi 404 jika data tidak ditemukan
-    }
-
-    const data = rows.map(row => ({
+    // Siapkan data yang akan dikembalikan
+    let data = rows.map(row => ({
         id: row.id,
-        ...row
+        user_id: row.user_id,
+        food_name: row.food_name,
+        carbohydrate: row.carbohydrate,
+        proteins: row.proteins,
+        fat: row.fat,
+        calories: row.calories,
     }));
+
+    // Jika tidak ada data, kembalikan array kosong
+    if (rows.length === 0) {
+        data = [];
+    }
 
     return h.response({
         status: 'success',
-        message: 'Berhasil mengambil data',
+        message: 'Success fetch data',
         data
     }).code(200);
 }
