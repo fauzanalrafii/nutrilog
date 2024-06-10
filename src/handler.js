@@ -2,35 +2,32 @@ require('dotenv').config();
 const crypto = require('crypto');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-const pool = require('./db');
+const { getConnection } = require('./db');
+const { omit, formatStringToDate, formatDateToString, omitFromArray } = require('./utils');
 
 async function postRegister(request, h) {
-    const { name, email, password, gender, age } = request.payload;
+    const { name, email, password, gender, date_of_birth } = request.payload;
 
-    if (!name || !email || !password || !gender || !age) {
+    if (!name || !email || !password || !gender || !date_of_birth) {
         return h.response({
             status: 'error',
             message: 'Name, email, password, gender, and age are required'
         }).code(400);
-    }
-
-    if (password.length < 8) {
+    } else if (password.length < 8) {
         return h.response({
             status: 'error',
             message: 'Password must be at least 8 characters'
         }).code(400);
-    }
-
-    if(gender !== "female" || "male"){
+    } else if(gender !== "female" && gender !== "male"){
         return h.response({
             status: 'error',
             message: 'Gender must be male or female'
         }).code(400);
     }
 
-    const connection = await pool.getConnection();
+    const db = await getConnection();
     try {
-        const [rows] = await connection.execute(
+        const [rows] = await db.execute(
             'SELECT id FROM users WHERE email = ?',
             [email]
         );
@@ -42,12 +39,12 @@ async function postRegister(request, h) {
             }).code(400);
         }
 
-        const id = crypto.randomUUID();
         const hashedPassword = await bcrypt.hash(password, 10);
 
-        await connection.execute(
-            'INSERT INTO users (id, name, email, password, gender, age) VALUES (?, ?, ?, ?, ?, ?)',
-            [id, name, email, hashedPassword, gender, age]
+        const formattedDateOfBirth = formatStringToDate(date_of_birth).split('T')[0];
+        await db.execute(
+            'INSERT INTO users (name, email, password, gender, date_of_birth) VALUES (?, ?, ?, ?, ?)',
+            [name, email, hashedPassword, gender, formattedDateOfBirth]
         );
 
         return h.response({
@@ -60,8 +57,6 @@ async function postRegister(request, h) {
             status: 'error',
             message: 'Internal Server Error'
         }).code(500);
-    } finally {
-        connection.release();
     }
 }
 
@@ -75,11 +70,11 @@ async function loginUser(request, h) {
         }).code(400);
     }
 
-    const connection = await pool.getConnection();
+    const db = await getConnection();
     let user;
     try {
-        const [rows] = await connection.execute(
-            'SELECT id, name, email, password, gender, age FROM users WHERE email = ?',
+        const [rows] = await db.execute(
+            'SELECT id, name, email, password, gender, date_of_birth FROM users WHERE email = ?',
             [email]
         );
 
@@ -91,8 +86,12 @@ async function loginUser(request, h) {
         }
 
         user = rows[0];
-    } finally {
-        connection.release();
+    } catch (error) {
+        console.error('Error during user login:', error);
+        return h.response({
+            status: 'error',
+            message: 'Internal Server Error'
+        }).code(500);
     }
 
     const passwordMatch = await bcrypt.compare(password, user.password);
@@ -105,42 +104,20 @@ async function loginUser(request, h) {
     }
 
     const token = jwt.sign({ user_id: user.id }, process.env.JWT_SECRET);
-
-    delete user.password;
+    const userWithoutPassword = omit(user, 'password');
 
     return h.response({
         status: 'success',
         message: 'Login success',
-        data: { ...user, token }
+        data: {
+            ...userWithoutPassword,
+            date_of_birth: formatDateToString(user.date_of_birth),
+            token
+        }
     }).code(200);
 }
 
 async function postPredict(request, h) {
-    const authorizationHeader = request.headers.authorization;
-
-    if (!authorizationHeader || !authorizationHeader.startsWith('Bearer ')) {
-        return h.response({
-            status: 'error',
-            message: 'Authorization missing'
-        }).code(401);
-    }
-
-    const token = authorizationHeader.split(' ')[1];
-    const JWT_SECRET = process.env.JWT_SECRET;
-
-    let decodedToken;
-    try {
-        decodedToken = jwt.verify(token, JWT_SECRET);
-    } catch (err) {
-        console.error('Token verification error:', err);
-        return h.response({
-            status: 'error',
-            message: 'Invalid token'
-        }).code(401);
-    }
-
-    const user_id = decodedToken.user_id;
-    const id = crypto.randomUUID();
     const { food_name, carbohydrate, proteins, fat, calories } = request.payload;
 
     if (!food_name || !carbohydrate || !proteins || !fat || !calories) {
@@ -150,40 +127,6 @@ async function postPredict(request, h) {
         }).code(400);
     }
 
-    const connection = await pool.getConnection();
-    try {
-        await connection.execute(
-            'INSERT INTO predictions (id, user_id, food_name, carbohydrate, proteins, fat, calories) VALUES (?, ?, ?, ?, ?, ?, ?)',
-            [id, user_id, food_name, carbohydrate, proteins, fat, calories]
-        );
-
-        const [result] = await connection.execute(
-            'SELECT id, user_id, food_name, carbohydrate, proteins, fat, calories, created_at FROM predictions WHERE id = ?',
-            [id]
-        );
-
-        let data = result[0];
-
-        delete data.updated_at;
-
-        return h.response({
-            status: 'success',
-            message: 'Data added successfully',
-            data
-        }).code(200);
-    } catch (err) {
-        console.error('Error during postPredict:', err);
-        return h.response({
-            status: 'error',
-            message: 'Internal Server Error'
-        }).code(500);
-    } finally {
-        connection.release();
-    }
-}
-
-async function fetchNutrients(request, h) {
-    const { date } = request.query;
     const authorizationHeader = request.headers.authorization;
 
     if (!authorizationHeader || !authorizationHeader.startsWith('Bearer ')) {
@@ -194,11 +137,10 @@ async function fetchNutrients(request, h) {
     }
 
     const token = authorizationHeader.split(' ')[1];
-    const JWT_SECRET = process.env.JWT_SECRET;
 
     let decodedToken;
     try {
-        decodedToken = jwt.verify(token, JWT_SECRET);
+        decodedToken = jwt.verify(token, process.env.JWT_SECRET, { ignoreExpiration: true });
     } catch (err) {
         console.error('Token verification error:', err);
         return h.response({
@@ -207,14 +149,72 @@ async function fetchNutrients(request, h) {
         }).code(401);
     }
 
-    const user_id = decodedToken.user_id;
+    const db = await getConnection();
+    try {
+        const [result] = await db.execute(
+            'INSERT INTO nutrients (user_id, food_name, carbohydrate, proteins, fat, calories) VALUES (?, ?, ?, ?, ?, ?)',
+            [decodedToken.user_id, food_name, carbohydrate, proteins, fat, calories]
+        );
 
-    const connection = await pool.getConnection();
+        const [rows] = await db.execute(
+            'SELECT * FROM nutrients WHERE id = ?',
+            [result.insertId]
+        );
+
+        let data = rows[0];
+        const nutrientsWithoutUpdatedAt = omit(data, 'updated_at');
+
+        return h.response({
+            status: 'success',
+            message: 'Data added successfully',
+            data: nutrientsWithoutUpdatedAt
+        }).code(200);
+    } catch (err) {
+        console.error('Error during analyze:', err);
+        return h.response({
+            status: 'error',
+            message: 'Internal Server Error'
+        }).code(500);
+    }
+}
+
+async function fetchNutrients(request, h) {
+    const { date } = request.query;
+
+    if (!date) {
+        return h.response({
+            status: 'error',
+            message: 'Date is required'
+        }).code(400);
+    }
+
+    const authorizationHeader = request.headers.authorization;
+
+    if (!authorizationHeader || !authorizationHeader.startsWith('Bearer ')) {
+        return h.response({
+            status: 'error',
+            message: 'Authorization missing'
+        }).code(401);
+    }
+
+    const token = authorizationHeader.split(' ')[1];
+    let decodedToken;
+    try {
+        decodedToken = jwt.verify(token, process.env.JWT_SECRET, { ignoreExpiration: true });
+    } catch (err) {
+        console.error('Token verification error:', err);
+        return h.response({
+            status: 'error',
+            message: 'Invalid token'
+        }).code(401);
+    }
+
+    const connection = await getConnection();
     let rows;
     try {
         const [results] = await connection.execute(
-            'SELECT id, user_id, food_name, carbohydrate, proteins, fat, calories, created_at FROM predictions WHERE DATE(created_at) = ? AND user_id = ?',
-            [date, user_id]
+            'SELECT * FROM nutrients WHERE DATE(created_at) = ? AND user_id = ?',
+            [date, decodedToken.user_id]
         );
         rows = results;
     } catch (err) {
@@ -223,24 +223,9 @@ async function fetchNutrients(request, h) {
             status: 'error',
             message: 'Internal Server Error'
         }).code(500);
-    } finally {
-        connection.release();
     }
 
-    let data = rows.map(row => ({
-        id: row.id,
-        user_id: row.user_id,
-        food_name: row.food_name,
-        carbohydrate: row.carbohydrate,
-        proteins: row.proteins,
-        fat: row.fat,
-        calories: row.calories,
-    }));
-
-    // Jika tidak ada data, kembalikan array kosong
-    if (rows.length === 0) {
-        data = [];
-    }
+    const data = omitFromArray(rows, 'updated_at');
 
     return h.response({
         status: 'success',
