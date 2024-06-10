@@ -21,6 +21,13 @@ async function postRegister(request, h) {
         }).code(400);
     }
 
+    if(gender !== "female" || "male"){
+        return h.response({
+            status: 'error',
+            message: 'Gender must be male or female'
+        }).code(400);
+    }
+
     const connection = await pool.getConnection();
     try {
         const [rows] = await connection.execute(
