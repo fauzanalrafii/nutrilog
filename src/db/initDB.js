@@ -1,5 +1,6 @@
 const { getConnection } = require("./index");
 
+
 const userTableQuery = `
   CREATE TABLE IF NOT EXISTS users (
     id VARCHAR(255) NOT NULL DEFAULT (CONCAT('USR_', UUID())) PRIMARY KEY,

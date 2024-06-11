@@ -6,6 +6,7 @@ function omit(obj, ...keys) {
   return result;
 }
 
+
 function omitFromArray(jsonArray, ...keys) {
   return jsonArray.map(obj => omit(obj, ...keys));
 }

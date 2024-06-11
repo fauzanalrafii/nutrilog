@@ -102,6 +102,7 @@ async function loginUser(request, h) {
             message: 'Wrong email or password'
         }).code(400);
     }
+    
 
     const token = jwt.sign({ user_id: user.id }, process.env.JWT_SECRET);
     const userWithoutPassword = omit(user, 'password');
