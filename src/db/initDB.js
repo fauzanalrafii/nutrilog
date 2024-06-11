@@ -1,4 +1,4 @@
-const { getConnection } = require(".");
+const { getConnection } = require("./index");
 
 const userTableQuery = `
   CREATE TABLE IF NOT EXISTS users (
